@@ -17,7 +17,10 @@ jobs:
 
       - name: Install Chrome 140 + ChromeDriver 140
         run: |
-          # Download Chrome 140 for Linux
+          # Create temp dir
+          mkdir -p /tmp/chrome-profile
+
+          # Download Chrome 140
           wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chrome-linux64.zip
           unzip -q chrome-linux64.zip
           sudo mv chrome-linux64/chrome /usr/bin/google-chrome
@@ -29,7 +32,7 @@ jobs:
           sudo mv chromedriver-linux64/chromedriver /usr/bin/chromedriver
           sudo chmod +x /usr/bin/chromedriver
 
-          # Verify versions
+          # Verify
           google-chrome --version
           chromedriver --version
 
