@@ -23,7 +23,7 @@ def get_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-   明星    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     driver = webdriver.Chrome(options=options)
     return driver
@@ -33,14 +33,13 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading page...")
         driver.get(CALENDAR_URL)
-        time.sleep(5)  # Wait for JS to load movies
+        time.sleep(6)  # Wait for JS to load
 
         movies = set()
-        # Extract from rendered DOM
         elements = driver.find_elements(By.CSS_SELECTOR, "h3, .CalendarFilmCard-filmTitle, [data-film-title], a[href*='/film/']")
         for el in elements:
             title = el.text.strip()
-            if title and len(title) > 2 and "Alamo" not in title:
+            if title and len(title) > 2 and "Alamo" not in title and "Cinema" not in title:
                 movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:5]}...")
