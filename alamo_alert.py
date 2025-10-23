@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Final - Accurate Titles)
+# alamo_alert.py - Alamo Austin New Movies (Robust Selenium)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -8,6 +8,8 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 
 # === CONFIG ===
@@ -33,25 +35,33 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
-        time.sleep(7)  # Let JS fully load
+
+        # Wait up to 15 seconds for any movie link to appear
+        wait = WebDriverWait(driver, 15)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/film/']")))
+            print("Movie links detected!")
+        except:
+            print("No /film/ links found after 15s")
+
+        time.sleep(3)  # Extra buffer
 
         movies = set()
+        elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
 
-        # TARGET: Only movie title elements in the calendar grid
-        title_elements = driver.find_elements(By.CSS_SELECTOR, 
-            "h3.CalendarFilmCard-filmTitle, "
-            "a[data-testid='film-title'], "
-            "div.CalendarFilmCard-filmTitle, "
-            "h3 a"
-        )
+        if not elements:
+            # DEBUG: Print page snippet
+            print("DEBUG: No /film/ links. Page source snippet:")
+            print(driver.page_source[:1000])
+            return []
 
-        for el in title_elements:
+        for el in elements:
             title = el.text.strip()
-            if (title and 
-                len(title) > 2 and 
-                title.upper() not in {"ALAMO DRAFTHOUSE", "CONTACT US", "TICKETS", "HOME", "SHOWTIMES"} and
-                not title.startswith("Buy") and
-                not title.startswith("View")):
+            href = el.get_attribute("href") or ""
+            if (title and len(title) > 2 and 
+                "drafthouse.com" not in title.lower() and
+                "alamo" not in title.lower() and
+                "/film/" in href):
                 movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:6]}...")
