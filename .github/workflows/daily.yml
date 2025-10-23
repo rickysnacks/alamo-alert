@@ -15,26 +15,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Chrome 140 + ChromeDriver 140
+      - name: Install Chrome + webdriver-manager
         run: |
-          mkdir -p /tmp/chrome-downloads
-          cd /tmp/chrome-downloads
-
-          wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chrome-linux64.zip
-          unzip -q chrome-linux64.zip
-          sudo mv chrome-linux64/chrome /usr/bin/google-chrome
-          sudo chmod +x /usr/bin/google-chrome
-
-          wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chromedriver-linux64.zip
-          unzip -q chromedriver-linux64.zip
-          sudo mv chromedriver-linux64/chromedriver /usr/bin/chromedriver
-          sudo chmod +x /usr/bin/chromedriver
-
-          google-chrome --version
-          chromedriver --version
-
-      - name: Install Selenium
-        run: pip install selenium
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+          pip install selenium webdriver-manager
 
       - name: Run Alamo Alert
         env:
