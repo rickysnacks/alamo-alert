@@ -1,5 +1,6 @@
-# alamo_alert.py - Alamo Austin New Movies (Working 2025 API)
+# alamo_alert.py - Alamo Austin New Movies (Scraping Version)
 import requests
+from bs4 import BeautifulSoup
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -13,31 +14,51 @@ EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
 EMAIL_RECEIVER = "Eric.schnakenberg@gmail.com"
 STATE_FILE = "/tmp/alamo_state.json"
 
-# NEW WORKING API
-API_URL = "https://api.drafthouse.com/v2/markets/austin/showtimes/"
-
+CALENDAR_URL = "https://drafthouse.com/austin/calendar"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 }
 
 def fetch_movies():
     try:
-        resp = requests.get(API_URL, headers=HEADERS, timeout=20)
+        resp = requests.get(CALENDAR_URL, headers=HEADERS, timeout=20)
         resp.raise_for_status()
-        data = resp.json()
+        soup = BeautifulSoup(resp.text, 'html.parser')
         
         movies = set()
-        for showtime in data.get("showtimes", []):
-            title = showtime.get("film", {}).get("title", "").strip()
-            if title and len(title) > 2:
-                movies.add(title)
+        
+        # Extract titles from common Alamo classes (updated for 2025)
+        for selector in [
+            '.CalendarFilmCard-filmTitle',
+            'h3.film-title',
+            '.film-card h4',
+            '.movie-title',
+            'a[href*="/film/"]'
+        ]:
+            for item in soup.select(selector):
+                title = item.get_text(strip=True)
+                if title and len(title) > 2 and title not in movies:
+                    movies.add(title)
+        
+        # Fallback: Parse JSON in script tags (Alamo embeds data)
+        for script in soup.find_all('script', type='application/ld+json'):
+            try:
+                data = json.loads(script.string)
+                if isinstance(data, list):
+                    for item in data:
+                        if item.get('@type') == 'Movie':
+                            title = item.get('name')
+                            if title:
+                                movies.add(title)
+            except:
+                pass
         
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:5]}...")
         return sorted(list(movies))
     
     except Exception as e:
-        print(f"API failed: {e}")
+        print(f"Scraping failed: {e}")
         return []
 
 def load_previous():
@@ -53,7 +74,7 @@ def save_current(current):
 def send_email(new_movies):
     if not new_movies: return
     subject = f"New Movie{'s' if len(new_movies)>1 else ''} at Alamo Austin!"
-    body = "New movies:\n" + "\n".join(f"• {m}" for m in new_movies) + "\n\nhttps://drafthouse.com/austin"
+    body = "New movies:\n" + "\n".join(f"• {m}" for m in new_movies) + "\n\nhttps://drafthouse.com/austin/calendar"
     msg = MIMEMultipart()
     msg['From'], msg['To'], msg['Subject'] = EMAIL_SENDER, EMAIL_RECEIVER, subject
     msg.attach(MIMEText(body, 'plain'))
