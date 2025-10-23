@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Final - Wait & Scroll)
+# alamo_alert.py - Alamo Austin New Movies (Final - Lazy Load + Scroll)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -45,36 +45,34 @@ def fetch_movies():
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
 
-        # Wait for calendar container
+        # Wait for calendar grid
         wait = WebDriverWait(driver, 20)
         try:
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, [data-testid='calendar'], .Calendar")))
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid")))
             print("Calendar grid loaded!")
         except:
-            print("Calendar container not found")
+            print("Calendar grid not found")
 
-        # Scroll to trigger lazy loading
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(5)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(3)
+        # Scroll slowly to load all movies
+        print("Scrolling to load all movies...")
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        while True:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(3)
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+            last_height = new_height
+        print("Scroll complete.")
 
-        # Extract movie titles
+        # Extract from a[href*='/film/']
         movies = set()
-        selectors = [
-            "a[href*='/film/'] h3",
-            "a[href*='/film/']",
-            ".CalendarFilmCard-filmTitle",
-            "[data-testid*='film']",
-            "h3"
-        ]
-        for sel in selectors:
-            elements = driver.find_elements(By.CSS_SELECTOR, sel)
-            for el in elements:
-                title = el.text.strip()
-                href = el.find_element(By.XPATH, "./ancestor::a").get_attribute("href") if el.tag_name != "a" else el.get_attribute("href")
-                if title and len(title) > 2 and "alamo" not in title.lower() and (href and "/film/" in href):
-                    movies.add(title)
+        elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
+        for el in elements:
+            title = el.text.strip()
+            href = el.get_attribute("href") or ""
+            if title and len(title) > 2 and "alamo" not in title.lower() and "/film/" in href:
+                movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:6]}...")
         return sorted(list(movies))
