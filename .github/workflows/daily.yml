@@ -1,24 +1,55 @@
-name: Alamo Alert
+name: Alamo Austin Alert
+
 on:
   schedule:
-    - cron: '0 14 * * *'
-  workflow_dispatch:
+    # Every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # Manual trigger
 
 jobs:
-  check:
+  check-showtimes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Chrome + chromedriver-autoinstaller
+          cache: 'pip'
+
+      - name: Install Python dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser
-          pip install selenium chromedriver-autoinstaller
-      - name: Run Alamo Alert
+          python -m pip install --upgrade pip
+          pip install selenium beautifulsoup4
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Verify Chrome version
+        run: |
+          echo "Chrome version:"
+          google-chrome --version || true
+
+      - name: Run Alamo Alert Script
         env:
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        run: python alamo_alert.py
+          EMAIL_ENABLED: ${{ secrets.EMAIL_ENABLED }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+        run: |
+          python alamo_alert.py
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alamo-alert-logs-${{ github.run_id }}
+          path: |
+            alamo_alert.log
+            alamo_cache.json
