@@ -1,7 +1,7 @@
 name: Alamo Alert
 on:
   schedule:
-    - cron: '0 14 * * *'  # 9 AM Austin
+    - cron: '0 14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,10 +12,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install Chrome + Selenium
+      - name: Install Chrome + ChromeDriver + Selenium
         run: |
           sudo apt-get update
-          sudo apt-get install -y chromium-browser
+          sudo apt-get install -y chromium-browser chromium-chromedriver
           pip install selenium
       - run: python alamo_alert.py
         env:
