@@ -1,65 +1,55 @@
-# alamo_alert.py - Alamo Austin New Movies (Scraping Version)
-import requests
-from bs4 import BeautifulSoup
+# alamo_alert.py - Alamo Austin New Movies (Selenium + Headless Chrome)
 import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+import time
 
 # === CONFIG ===
 EMAIL_SENDER = os.environ["EMAIL_SENDER"]
 EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
 EMAIL_RECEIVER = "Eric.schnakenberg@gmail.com"
 STATE_FILE = "/tmp/alamo_state.json"
-
 CALENDAR_URL = "https://drafthouse.com/austin/calendar"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-}
+
+def get_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+   明星    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    driver = webdriver.Chrome(options=options)
+    return driver
 
 def fetch_movies():
+    driver = get_driver()
     try:
-        resp = requests.get(CALENDAR_URL, headers=HEADERS, timeout=20)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
+        print(f"[{datetime.now()}] Loading page...")
+        driver.get(CALENDAR_URL)
+        time.sleep(5)  # Wait for JS to load movies
+
         movies = set()
-        
-        # Extract titles from common Alamo classes (updated for 2025)
-        for selector in [
-            '.CalendarFilmCard-filmTitle',
-            'h3.film-title',
-            '.film-card h4',
-            '.movie-title',
-            'a[href*="/film/"]'
-        ]:
-            for item in soup.select(selector):
-                title = item.get_text(strip=True)
-                if title and len(title) > 2 and title not in movies:
-                    movies.add(title)
-        
-        # Fallback: Parse JSON in script tags (Alamo embeds data)
-        for script in soup.find_all('script', type='application/ld+json'):
-            try:
-                data = json.loads(script.string)
-                if isinstance(data, list):
-                    for item in data:
-                        if item.get('@type') == 'Movie':
-                            title = item.get('name')
-                            if title:
-                                movies.add(title)
-            except:
-                pass
-        
+        # Extract from rendered DOM
+        elements = driver.find_elements(By.CSS_SELECTOR, "h3, .CalendarFilmCard-filmTitle, [data-film-title], a[href*='/film/']")
+        for el in elements:
+            title = el.text.strip()
+            if title and len(title) > 2 and "Alamo" not in title:
+                movies.add(title)
+
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:5]}...")
         return sorted(list(movies))
-    
     except Exception as e:
-        print(f"Scraping failed: {e}")
+        print(f"Selenium failed: {e}")
         return []
+    finally:
+        driver.quit()
 
 def load_previous():
     if os.path.exists(STATE_FILE):
