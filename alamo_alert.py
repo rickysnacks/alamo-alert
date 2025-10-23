@@ -1,12 +1,14 @@
-# alamo_alert.py - Alamo Austin New Movies (undetected-chromedriver)
+# alamo_alert.py - Alamo Austin New Movies (Snap Chromium + AutoInstaller)
 import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from datetime import datetime
-import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+import chromedriver_autoinstaller
 import time
 
 # === CONFIG ===
@@ -17,7 +19,10 @@ STATE_FILE = "/tmp/alamo_state.json"
 CALENDAR_URL = "https://drafthouse.com/austin/calendar"
 
 def get_driver():
-    options = uc.ChromeOptions()
+    # Auto-install correct chromedriver for Snap Chromium
+    chromedriver_autoinstaller.install()
+
+    options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -28,8 +33,9 @@ def get_driver():
     options.add_argument("--disable-images")
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    options.binary_location = "/snap/bin/chromium"  # Snap Chromium path
 
-    driver = uc.Chrome(options=options, version_main=140)
+    driver = webdriver.Chrome(options=options)
     return driver
 
 def fetch_movies():
@@ -37,13 +43,13 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
-        time.sleep(8)
+        time.sleep(10)  # Let React + lazy load
 
         print("Scrolling to load all movies...")
         last_height = driver.execute_script("return document.body.scrollHeight")
-        while True:
+        for _ in range(10):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3)
+            time.sleep(2)
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
