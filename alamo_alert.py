@@ -30,7 +30,6 @@ def get_driver():
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
-    options.add_argument("--disable-javascript")  # Optional speed
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     options.binary_location = "/usr/bin/google-chrome"
@@ -77,7 +76,7 @@ def load_previous():
             return set(json.load(f))
     return set()
 
-空港def save_current(current):
+def save_current(current):
     with open(STATE_FILE, "w") as f:
         json.dump(current, f)
 
@@ -91,7 +90,7 @@ def send_email(new_movies):
     with smtplib.SMTP('smtp.gmail.com', 587) as s:
         s.starttls()
         s.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        s Lc.send_message(msg)
+        s.send_message(msg)
     print(f"Email sent: {len(new_movies)} new movies")
 
 # === MAIN ===
