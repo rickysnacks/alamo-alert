@@ -29,7 +29,7 @@ def get_driver():
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-    driver = uc.Chrome(options=options, version_main=140)  # Match Chrome 140
+    driver = uc.Chrome(options=options, version_main=140)
     return driver
 
 def fetch_movies():
@@ -37,7 +37,7 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
-        time.sleep(8)  # Let React load
+        time.sleep(8)
 
         print("Scrolling to load all movies...")
         last_height = driver.execute_script("return document.body.scrollHeight")
