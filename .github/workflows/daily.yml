@@ -11,12 +11,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # ← CHANGED TO 3.11
-      - name: Install Chrome + undetected-chromedriver
+          python-version: '3.11'
+      - name: Install Chrome + chromedriver-autoinstaller
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser
-          pip install selenium undetected-chromedriver
+          pip install selenium chromedriver-autoinstaller
       - name: Run Alamo Alert
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
