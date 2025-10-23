@@ -1,7 +1,7 @@
 name: Alamo Alert
 on:
   schedule:
-    - cron: '0 14 * * *'  # 9 AM Austin
+    - cron: '0 14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -17,22 +17,19 @@ jobs:
 
       - name: Install Chrome 140 + ChromeDriver 140
         run: |
-          # Create temp dir
-          mkdir -p /tmp/chrome-profile
+          mkdir -p /tmp/chrome-downloads
+          cd /tmp/chrome-downloads
 
-          # Download Chrome 140
           wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chrome-linux64.zip
           unzip -q chrome-linux64.zip
           sudo mv chrome-linux64/chrome /usr/bin/google-chrome
           sudo chmod +x /usr/bin/google-chrome
 
-          # Download ChromeDriver 140
           wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chromedriver-linux64.zip
           unzip -q chromedriver-linux64.zip
           sudo mv chromedriver-linux64/chromedriver /usr/bin/chromedriver
           sudo chmod +x /usr/bin/chromedriver
 
-          # Verify
           google-chrome --version
           chromedriver --version
 
