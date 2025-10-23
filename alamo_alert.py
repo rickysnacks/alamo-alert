@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Auto ChromeDriver)
+# alamo_alert.py - Alamo Austin New Movies (Final - Wait & Scroll)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -33,7 +33,6 @@ def get_driver():
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
-    # Auto-install matching ChromeDriver
     driver = webdriver.Chrome(
         service=webdriver.chrome.service.Service(ChromeDriverManager().install()),
         options=options
@@ -46,22 +45,36 @@ def fetch_movies():
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
 
-        wait = WebDriverWait(driver, 15)
+        # Wait for calendar container
+        wait = WebDriverWait(driver, 20)
         try:
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/film/']")))
-            print("Movie links detected!")
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, [data-testid='calendar'], .Calendar")))
+            print("Calendar grid loaded!")
         except:
-            print("No /film/ links after 15s")
+            print("Calendar container not found")
 
+        # Scroll to trigger lazy loading
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(5)
+        driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(3)
 
+        # Extract movie titles
         movies = set()
-        elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
-        for el in elements:
-            title = el.text.strip()
-            href = el.get_attribute("href") or ""
-            if title and len(title) > 2 and "alamo" not in title.lower() and "/film/" in href:
-                movies.add(title)
+        selectors = [
+            "a[href*='/film/'] h3",
+            "a[href*='/film/']",
+            ".CalendarFilmCard-filmTitle",
+            "[data-testid*='film']",
+            "h3"
+        ]
+        for sel in selectors:
+            elements = driver.find_elements(By.CSS_SELECTOR, sel)
+            for el in elements:
+                title = el.text.strip()
+                href = el.find_element(By.XPATH, "./ancestor::a").get_attribute("href") if el.tag_name != "a" else el.get_attribute("href")
+                if title and len(title) > 2 and "alamo" not in title.lower() and (href and "/film/" in href):
+                    movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:6]}...")
         return sorted(list(movies))
