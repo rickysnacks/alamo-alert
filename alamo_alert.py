@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Snap Chromium + AutoInstaller)
+# alamo_alert.py - Alamo Austin New Movies (Fixed Selectors + Waits)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -8,6 +8,8 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import chromedriver_autoinstaller
 import time
 
@@ -16,11 +18,11 @@ EMAIL_SENDER = os.environ["EMAIL_SENDER"]
 EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
 EMAIL_RECEIVER = "Eric.schnakenberg@gmail.com"
 STATE_FILE = "/tmp/alamo_state.json"
-CALENDAR_URL = "https://drafthouse.com/austin/calendar"
+CALENDAR_URL = "https://drafthouse.com/austin?showCalendar=true"  # Updated URL
 
 def get_driver():
-    # Auto-install correct chromedriver for Snap Chromium
-    chromedriver_autoinstaller.install()
+    # Install latest matching chromedriver
+    chromedriver_autoinstaller.install(True)
 
     options = Options()
     options.add_argument("--headless")
@@ -31,7 +33,6 @@ def get_driver():
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
-    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     options.binary_location = "/snap/bin/chromium"  # Snap Chromium path
 
@@ -43,26 +44,49 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
-        time.sleep(10)  # Let React + lazy load
+        print(f"Page title: {driver.title}")
+        print(f"Current URL: {driver.current_url}")
 
-        print("Scrolling to load all movies...")
+        # Wait for calendar to load (up to 20s)
+        wait = WebDriverWait(driver, 20)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, .calendar, [data-testid*='calendar']")))
+            print("Calendar loaded!")
+        except:
+            print("Calendar container not found — waiting extra time...")
+            time.sleep(5)
+
+        # Scroll to load all movies
+        print("Scrolling to load movies...")
         last_height = driver.execute_script("return document.body.scrollHeight")
-        for _ in range(10):
+        scroll_count = 0
+        while scroll_count < 10:  # Max 10 scrolls
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
             last_height = new_height
-        print("Scroll complete.")
+            scroll_count += 1
+        print(f"Scroll complete after {scroll_count} scrolls.")
 
+        # Multiple selectors for movie titles (Alamo's structure)
         movies = set()
-        elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
-        for el in elements:
-            title = el.text.strip()
-            href = el.get_attribute("href") or ""
-            if title and len(title) > 2 and "alamo" not in title.lower() and "/film/" in href:
-                movies.add(title)
+        selectors = [
+            ".CalendarFilmCard-filmTitle",
+            "h3.film-title",
+            ".film-card h3",
+            "a[href*='/film/'] h3",
+            "[data-testid='film-title']",
+            "h3"  # Fallback for titles
+        ]
+        for selector in selectors:
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            print(f"Trying selector '{selector}': found {len(elements)} elements")
+            for el in elements:
+                title = el.text.strip()
+                if title and len(title) > 2 and "alamo" not in title.lower() and not title.startswith("Buy") and not title.startswith("View"):
+                    movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:6]}...")
         return sorted(list(movies))
@@ -86,7 +110,7 @@ def save_current(current):
 def send_email(new_movies):
     if not new_movies: return
     subject = f"New Movie{'s' if len(new_movies)>1 else ''} at Alamo Austin!"
-    body = "New movies:\n" + "\n".join(f"• {m}" for m in new_movies) + "\n\nhttps://drafthouse.com/austin/calendar"
+    body = "New movies:\n" + "\n".join(f"• {m}" for m in new_movies) + "\n\nhttps://drafthouse.com/austin?showCalendar=true"
     msg = MIMEMultipart()
     msg['From'], msg['To'], msg['Subject'] = EMAIL_SENDER, EMAIL_RECEIVER, subject
     msg.attach(MIMEText(body, 'plain'))
