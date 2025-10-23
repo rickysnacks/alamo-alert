@@ -1,7 +1,7 @@
 name: Alamo Alert
 on:
   schedule:
-    - cron: '0 14 * * *'  # 9 AM Austin time
+    - cron: '0 14 * * *'  # 9 AM Austin
   workflow_dispatch:
 
 jobs:
