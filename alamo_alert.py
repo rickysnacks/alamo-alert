@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Alamo Drafthouse Austin – New Movie Alert (2025)
-Detects *new movie titles* (not show-times) and emails you instantly.
+Detects NEW MOVIE TITLES from the calendar table.
 """
 
 import logging
@@ -21,17 +21,17 @@ from bs4 import BeautifulSoup
 
 # ============================= CONFIG =============================
 BASE_URL = "https://drafthouse.com/austin"
-CALENDAR_URL = f"{BASE_URL}?showCalendar=true"
+url = f"{BASE_URL}?showCalendar=true"
 CACHE_FILE = "alamo_movie_cache.json"
 LOG_FILE = "alamo_alert.log"
-SCREENSHOT = "debug_calendar.png"
+SCREENSHOT = "debug_calendar_full.png"
 
-# Email – set EMAIL_ENABLED=true in GitHub Secrets to turn on
+# Email via GitHub Secrets
 EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() == "true"
 EMAIL_TO = os.getenv("EMAIL_TO")
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
-EMAIL_SMTP = os.getenv("SMTP_SERVER", "smtp.gmail.com:587")
+EMAIL_SMTP = os.getenv("EMAIL_SMTP", "smtp.gmail.com:587")
 
 # =================================================================
 
@@ -43,14 +43,13 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-def get_driver() -> webdriver.Chrome:
-    """CI-safe headless Chrome with anti-bot tricks."""
+def get_driver():
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
-    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--window-size=1920,1600")  # Taller window
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
@@ -60,143 +59,147 @@ def get_driver() -> webdriver.Chrome:
     )
     driver = webdriver.Chrome(options=opts)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
-    driver.set_page_load_timeout(40)
-    log.info("Chrome driver ready")
+    driver.set_page_load_timeout(45)
+    log.info("Driver ready")
     return driver
 
 
-def click_calendar_view(driver) -> None:
-    """Make sure the calendar tab, not the “show-times” grid, is displayed."""
-    try:
-        # The toggle is a button with text “Calendar View”
-        btn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable(
-                (By.XPATH, "//button[contains(., 'Calendar View') or contains(., 'CALENDAR VIEW')]")
-            )
-        )
-        driver.execute_script("arguments[0].click();", btn)
-        log.info("Clicked Calendar View")
-        time.sleep(2)
-    except TimeoutException:
-        log.info("Calendar View already active or not found – proceeding")
-
-
-def accept_cookies(driver) -> None:
-    """Dismiss the cookie banner if present."""
+def accept_cookies(driver):
     try:
         btn = driver.find_element(
             By.XPATH,
             "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept') "
-            "or contains(., 'OK') or contains(., 'Got it')]"
+            "or contains(., 'OK')]"
         )
         driver.execute_script("arguments[0].click();", btn)
-        log.info("Cookie banner dismissed")
+        log.info("Cookies accepted")
         time.sleep(2)
-    except NoSuchElementException:
+    except:
         log.info("No cookie banner")
 
 
-def scroll_to_load_all(driver) -> None:
-    """Scroll until the page height stops growing (lazy-load)."""
-    log.info("Scrolling to load every film...")
-    last_h = driver.execute_script("return document.body.scrollHeight")
-    attempts = 0
-    while attempts < 12:
+def click_calendar_view(driver):
+    try:
+        toggle = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//button[contains(., 'Calendar View')] | //span[contains(., 'Calendar View')]")
+            )
+        )
+        driver.execute_script("arguments[0].click();", toggle)
+        log.info("Switched to Calendar View")
+        time.sleep(3)
+    except:
+        log.info("Already in Calendar View")
+
+
+def scroll_to_load_calendar(driver):
+    """Scroll until all calendar rows are loaded."""
+    log.info("Scrolling to load full calendar...")
+    last_height = 0
+    stable_count = 0
+    max_stable = 5
+
+    while stable_count < max_stable:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(3)
-        new_h = driver.execute_script("return document.body.scrollHeight")
-        if new_h == last_h:
-            break
-        last_h = new_h
-        attempts += 1
-    log.info(f"Scrolling finished after {attempts} steps")
+
+        # Wait for new rows to appear
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, "table.calendar td")) > 50
+            )
+        except:
+            pass
+
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            stable_count += 1
+        else:
+            stable_count = 0
+        last_height = new_height
+
+    log.info("Calendar fully loaded")
 
 
 def fetch_movie_titles() -> Set[str]:
-    """Return a set of all unique movie titles currently listed."""
     driver = get_driver()
     titles: Set[str] = set()
 
     try:
-        log.info(f"Opening calendar → {CALENDAR_URL}")
-        driver.get(CALENDAR_URL)
+        log.info(f"Loading calendar: {url}")
+        driver.get(url)
 
-        # 1. Ensure calendar view
+        accept_cookies(driver)
         click_calendar_view(driver)
 
-        # 2. Cookie banner
-        accept_cookies(driver)
-
-        # 3. Wait for the calendar grid
+        # Wait for calendar table
         WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, .calendar-grid"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "table.calendar, .CalendarGrid"))
         )
-        log.info("Calendar grid present")
+        log.info("Calendar table detected")
 
-        # 4. Load everything
-        scroll_to_load_all(driver)
+        scroll_to_load_calendar(driver)
 
-        # 5. Parse with BS4
+        # Take full-page screenshot
+        driver.save_screenshot(SCREENSHOT)
+        log.info(f"Full screenshot saved: {SCREENSHOT}")
+
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
-        # ----- SELECTORS THAT WORK ON THE 2025 SITE -----
-        candidates = (
-            soup.select("[data-testid='film-title']") or
-            soup.select(".CalendarFilmCard-filmTitle") or
-            soup.select(".film-card h3") or
-            soup.select("a[href*='/film/'] h3") or
-            soup.select(".movie-title")
-        )
-        log.info(f"Found {len(candidates)} candidate elements")
+        # Extract titles from <td> in calendar
+        cells = soup.select("table.calendar td, .CalendarGrid td, td")
+        log.info(f"Found {len(cells)} calendar cells")
 
-        for el in candidates:
-            txt = el.get_text(strip=True)
-            if txt and len(txt) > 2 and "alamo" not in txt.lower():
-                titles.add(txt)
+        for cell in cells:
+            # Look for links with movie titles
+            link = cell.find("a", href=True)
+            if not link:
+                continue
+            title = link.get_text(strip=True)
+            if title and len(title) > 3 and "alamo" not in title.lower():
+                titles.add(title)
 
         log.info(f"Extracted {len(titles)} unique movie titles")
         return titles
 
     except Exception as e:
-        log.error(f"Scraping failed: {e}")
+        log.error(f"Error: {e}")
+        driver.save_screenshot(f"error_{int(time.time())}.png")
         return titles
     finally:
-        driver.save_screenshot(SCREENSHOT)
-        log.info(f"Screenshot → {SCREENSHOT}")
         driver.quit()
 
 
-# ---------- CACHE ----------
+# === Cache & Alert ===
 def load_cache() -> Set[str]:
     if not os.path.exists(CACHE_FILE):
         return set()
     try:
         with open(CACHE_FILE) as f:
             return set(json.load(f))
-    except Exception:
+    except:
         return set()
 
 
-def save_cache(titles: Set[str]) -> None:
+def save_cache(titles: Set[str]):
     with open(CACHE_FILE, "w") as f:
         json.dump(sorted(titles), f, indent=2)
 
 
-# ---------- ALERT ----------
-def send_email(new_titles: List[str]) -> None:
+def send_email(new_titles: List[str]):
     if not EMAIL_ENABLED or not all([EMAIL_TO, EMAIL_FROM, EMAIL_PASS]):
-        log.info("Email disabled or missing creds")
+        log.info("Email not enabled")
         return
 
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
-    subject = f"New Movie{'s' if len(new_titles) > 1 else ''} at Alamo Austin!"
-    body = "New titles just appeared:\n\n"
+    subject = f"NEW MOVIE ALERT: {len(new_titles)} title{'s' if len(new_titles)>1 else ''}"
+    body = "New movies added to Alamo Austin:\n\n"
     for t in new_titles:
         body += f"• {t}\n"
-    body += f"\nBuy tickets fast → {CALENDAR_URL}"
+    body += f"\n→ {url}"
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_FROM
@@ -205,31 +208,30 @@ def send_email(new_titles: List[str]) -> None:
     msg.attach(MIMEText(body, "plain"))
 
     try:
-        srv = smtplib.SMTP(EMAIL_SMTP.split(":")[0], int(EMAIL_SMTP.split(":")[1]))
-        srv.starttls()
-        srv.login(EMAIL_FROM, EMAIL_PASS)
-        srv.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-        srv.quit()
+        s = smtplib.SMTP(EMAIL_SMTP.split(":")[0], int(EMAIL_SMTP.split(":")[1]))
+        s.starttls()
+        s.login(EMAIL_FROM, EMAIL_PASS)
+        s.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+        s.quit()
         log.info("Email sent")
     except Exception as e:
-        log.error(f"Email error: {e}")
+        log.error(f"Email failed: {e}")
 
 
-# ---------- MAIN ----------
-def main() -> None:
-    log.info("=== Alamo New-Movie Check ===")
+def main():
+    log.info("=== Alamo New Movie Check ===")
     current = fetch_movie_titles()
     previous = load_cache()
-
     new = sorted(current - previous)
+
     if new:
-        log.info(f"{len(new)} NEW MOVIE(S): {', '.join(new)}")
+        log.info(f"NEW: {', '.join(new)}")
         send_email(new)
     else:
         log.info("No new movies")
 
     save_cache(current)
-    log.info("Run finished\n")
+    log.info("Done\n")
 
 
 if __name__ == "__main__":
