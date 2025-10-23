@@ -2,13 +2,16 @@ name: Alamo Austin – New Movie Alert
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # every 30 min
-  workflow_dispatch:        # manual run
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
+    # Add memory
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
 
     steps:
       - name: Checkout
@@ -37,14 +40,16 @@ jobs:
           EMAIL_FROM:    ${{ secrets.EMAIL_FROM }}
           EMAIL_PASS:    ${{ secrets.EMAIL_PASS }}
         run: |
-          python alamo_alert.py
+          python alamo_alert.py || echo "Script failed, retrying..."
+          sleep 10
+          python alamo_alert.py  # retry once
 
-      - name: Upload debug artefacts
+      - name: Upload debug
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: alamo-debug-${{ github.run_id }}
           path: |
-            debug_calendar.png
+            *.png
             alamo_alert.log
             alamo_movie_cache.json
