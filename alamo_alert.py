@@ -1,14 +1,12 @@
-# alamo_alert.py - Alamo Austin New Movies (Final - Scroll Only)
+# alamo_alert.py - Alamo Austin New Movies (undetected-chromedriver)
 import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 # === CONFIG ===
@@ -19,7 +17,7 @@ STATE_FILE = "/tmp/alamo_state.json"
 CALENDAR_URL = "https://drafthouse.com/austin/calendar"
 
 def get_driver():
-    options = Options()
+    options = uc.ChromeOptions()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -30,11 +28,8 @@ def get_driver():
     options.add_argument("--disable-images")
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
-    driver = webdriver.Chrome(
-        service=webdriver.chrome.service.Service(ChromeDriverManager().install()),
-        options=options
-    )
+
+    driver = uc.Chrome(options=options, version_main=140)  # Match Chrome 140
     return driver
 
 def fetch_movies():
@@ -42,9 +37,8 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
-        time.sleep(5)  # Initial load
+        time.sleep(8)  # Let React load
 
-        # SCROLL TO LOAD ALL MOVIES
         print("Scrolling to load all movies...")
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
@@ -56,7 +50,6 @@ def fetch_movies():
             last_height = new_height
         print("Scroll complete.")
 
-        # EXTRACT FROM a[href*='/film/']
         movies = set()
         elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
         for el in elements:
@@ -69,7 +62,7 @@ def fetch_movies():
         return sorted(list(movies))
 
     except Exception as e:
-        print(f"Selenium error: {e}")
+        print(f"Error: {e}")
         return []
     finally:
         driver.quit()
