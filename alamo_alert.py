@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Alamo Drafthouse Austin – New Movie Alert Script (2025)
-Detects new movie titles added to Austin theaters and sends email alerts.
+Alamo Drafthouse Austin – New Movie Alert (2025)
+Detects *new movie titles* (not show-times) and emails you instantly.
 """
 
 import logging
@@ -9,212 +9,227 @@ import os
 import json
 import time
 from datetime import datetime
-from typing import List, Set
+from typing import Set, List
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from bs4 import BeautifulSoup
 
 # ============================= CONFIG =============================
-CALENDAR_URL = "https://drafthouse.com/austin?showCalendar=true"  # Calendar view for new movies
-CACHE_FILE = "alamo_movie_cache.json"  # Caches movie titles
+BASE_URL = "https://drafthouse.com/austin"
+CALENDAR_URL = f"{BASE_URL}?showCalendar=true"
+CACHE_FILE = "alamo_movie_cache.json"
 LOG_FILE = "alamo_alert.log"
-DEBUG_SCREENSHOT = "debug_screenshot.png"
+SCREENSHOT = "debug_calendar.png"
 
-# Email via GitHub Secrets (set EMAIL_ENABLED to 'true' to activate)
+# Email – set EMAIL_ENABLED=true in GitHub Secrets to turn on
 EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() == "true"
-EMAIL_TO = os.getenv("EMAIL_TO", "Eric.schnakenberg@gmail.com")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "alamo.alert.bot@gmail.com")
+EMAIL_TO = os.getenv("EMAIL_TO")
+EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
-EMAIL_SMTP = os.getenv("EMAIL_SMTP", "smtp.gmail.com:587")
+EMAIL_SMTP = os.getenv("SMTP_SERVER", "smtp.gmail.com:587")
 
 # =================================================================
 
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
+    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()]
 )
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
-def get_driver():
-    """Initialize Chrome with CI-safe + anti-bot options."""
-    options = Options()
-    options.add_argument('--headless=new')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920,1080')
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--disable-browser-side-navigation')
-    options.add_argument('--disable-features=VizDisplayCompositor')
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-
-    # Spoof real user agent
-    options.add_argument(
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+def get_driver() -> webdriver.Chrome:
+    """CI-safe headless Chrome with anti-bot tricks."""
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1920,1080")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
+    opts.add_argument(
+        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
     )
+    driver = webdriver.Chrome(options=opts)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
+    driver.set_page_load_timeout(40)
+    log.info("Chrome driver ready")
+    return driver
 
+
+def click_calendar_view(driver) -> None:
+    """Make sure the calendar tab, not the “show-times” grid, is displayed."""
     try:
-        driver = webdriver.Chrome(options=options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
-        driver.set_page_load_timeout(40)
-        logger.info("WebDriver initialized with stealth.")
-        return driver
-    except Exception as e:
-        logger.error(f"Failed to start WebDriver: {e}")
-        raise
+        # The toggle is a button with text “Calendar View”
+        btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable(
+                (By.XPATH, "//button[contains(., 'Calendar View') or contains(., 'CALENDAR VIEW')]")
+            )
+        )
+        driver.execute_script("arguments[0].click();", btn)
+        log.info("Clicked Calendar View")
+        time.sleep(2)
+    except TimeoutException:
+        log.info("Calendar View already active or not found – proceeding")
+
+
+def accept_cookies(driver) -> None:
+    """Dismiss the cookie banner if present."""
+    try:
+        btn = driver.find_element(
+            By.XPATH,
+            "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept') "
+            "or contains(., 'OK') or contains(., 'Got it')]"
+        )
+        driver.execute_script("arguments[0].click();", btn)
+        log.info("Cookie banner dismissed")
+        time.sleep(2)
+    except NoSuchElementException:
+        log.info("No cookie banner")
+
+
+def scroll_to_load_all(driver) -> None:
+    """Scroll until the page height stops growing (lazy-load)."""
+    log.info("Scrolling to load every film...")
+    last_h = driver.execute_script("return document.body.scrollHeight")
+    attempts = 0
+    while attempts < 12:
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(3)
+        new_h = driver.execute_script("return document.body.scrollHeight")
+        if new_h == last_h:
+            break
+        last_h = new_h
+        attempts += 1
+    log.info(f"Scrolling finished after {attempts} steps")
 
 
 def fetch_movie_titles() -> Set[str]:
-    """Scrape current movie titles from Alamo Austin calendar."""
+    """Return a set of all unique movie titles currently listed."""
     driver = get_driver()
-    titles = set()
+    titles: Set[str] = set()
 
     try:
-        logger.info("Fetching movie calendar from Alamo Drafthouse Austin...")
+        log.info(f"Opening calendar → {CALENDAR_URL}")
         driver.get(CALENDAR_URL)
 
-        wait = WebDriverWait(driver, 30)
+        # 1. Ensure calendar view
+        click_calendar_view(driver)
 
-        # Wait for calendar grid or movie elements
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, .calendar-grid, [data-testid='calendar-grid'], .film-list")))
-        logger.info("Calendar grid detected.")
+        # 2. Cookie banner
+        accept_cookies(driver)
 
-        # Handle cookie banner
-        try:
-            accept = driver.find_element(
-                By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept')] | //button[contains(., 'OK')]"
-            )
-            accept.click()
-            time.sleep(2)
-            logger.info("Cookie banner accepted.")
-        except:
-            logger.info("No cookie banner.")
+        # 3. Wait for the calendar grid
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid, .calendar-grid"))
+        )
+        log.info("Calendar grid present")
 
-        # Scroll to load all movies (loop until no more changes)
-        logger.info("Scrolling to load all movies...")
-        last_height = driver.execute_script("return document.body.scrollHeight")
-        scroll_attempts = 0
-        while scroll_attempts < 10:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(3)
-            new_height = driver.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-                break
-            last_height = new_height
-            scroll_attempts += 1
-        logger.info("Scroll complete.")
+        # 4. Load everything
+        scroll_to_load_all(driver)
 
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        # 5. Parse with BS4
+        soup = BeautifulSoup(driver.page_source, "html.parser")
 
-        # Updated selectors for 2025 Alamo site
-        movie_elements = soup.select("[data-testid='film-title'], .CalendarFilmCard-filmTitle, h3.film-title, a[href*='/film/'] h3, .film-card h3, .movie-title")
+        # ----- SELECTORS THAT WORK ON THE 2025 SITE -----
+        candidates = (
+            soup.select("[data-testid='film-title']") or
+            soup.select(".CalendarFilmCard-filmTitle") or
+            soup.select(".film-card h3") or
+            soup.select("a[href*='/film/'] h3") or
+            soup.select(".movie-title")
+        )
+        log.info(f"Found {len(candidates)} candidate elements")
 
-        logger.info(f"Found {len(movie_elements)} potential movie elements.")
+        for el in candidates:
+            txt = el.get_text(strip=True)
+            if txt and len(txt) > 2 and "alamo" not in txt.lower():
+                titles.add(txt)
 
-        for el in movie_elements:
-            title = el.get_text(strip=True)
-            if title and len(title) > 2 and "alamo" not in title.lower() and "contact" not in title.lower():
-                titles.add(title)
-
-        logger.info(f"Filtered to {len(titles)} unique movie titles.")
+        log.info(f"Extracted {len(titles)} unique movie titles")
         return titles
 
-    except TimeoutException:
-        logger.error("Timeout: Calendar did not load.")
     except Exception as e:
-        logger.error(f"Scraping error: {e}")
+        log.error(f"Scraping failed: {e}")
+        return titles
     finally:
-        # Save screenshot for debugging
-        try:
-            driver.save_screenshot(DEBUG_SCREENSHOT)
-            logger.info(f"Screenshot saved: {DEBUG_SCREENSHOT}")
-        except:
-            pass
+        driver.save_screenshot(SCREENSHOT)
+        log.info(f"Screenshot → {SCREENSHOT}")
         driver.quit()
 
-    return titles
 
-
+# ---------- CACHE ----------
 def load_cache() -> Set[str]:
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, 'r') as f:
-                return set(json.load(f))
-        except:
-            return set()
-    return set()
+    if not os.path.exists(CACHE_FILE):
+        return set()
+    try:
+        with open(CACHE_FILE) as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
 
 
-def save_cache(titles: Set[str]):
-    with open(CACHE_FILE, 'w') as f:
-        json.dump(sorted(list(titles)), f, indent=2)
+def save_cache(titles: Set[str]) -> None:
+    with open(CACHE_FILE, "w") as f:
+        json.dump(sorted(titles), f, indent=2)
 
 
-def get_new_movies(old: Set[str], new: Set[str]) -> List[str]:
-    return sorted(list(new - old))
-
-
-def send_email_alert(new_movies: List[str]):
+# ---------- ALERT ----------
+def send_email(new_titles: List[str]) -> None:
     if not EMAIL_ENABLED or not all([EMAIL_TO, EMAIL_FROM, EMAIL_PASS]):
-        logger.info("Email not enabled or credentials missing.")
+        log.info("Email disabled or missing creds")
         return
 
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
 
-    subject = f"New Movie{'s' if len(new_movies) > 1 else ''} Added at Alamo Austin!"
-    body = "New movies just added to the Austin calendar:\n\n"
-    for m in new_movies:
-        body += f"• {m}\n"
-    body += "\nCheck and buy tickets: " + CALENDAR_URL
+    subject = f"New Movie{'s' if len(new_titles) > 1 else ''} at Alamo Austin!"
+    body = "New titles just appeared:\n\n"
+    for t in new_titles:
+        body += f"• {t}\n"
+    body += f"\nBuy tickets fast → {CALENDAR_URL}"
 
     msg = MIMEMultipart()
-    msg['From'] = EMAIL_FROM
-    msg['To'] = EMAIL_TO
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+    msg["From"] = EMAIL_FROM
+    msg["To"] = EMAIL_TO
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
 
     try:
-        server = smtplib.SMTP(EMAIL_SMTP)
-        server.starttls()
-        server.login(EMAIL_FROM, EMAIL_PASS)
-        server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
-        server.quit()
-        logger.info("Email alert sent successfully.")
+        srv = smtplib.SMTP(EMAIL_SMTP.split(":")[0], int(EMAIL_SMTP.split(":")[1]))
+        srv.starttls()
+        srv.login(EMAIL_FROM, EMAIL_PASS)
+        srv.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+        srv.quit()
+        log.info("Email sent")
     except Exception as e:
-        logger.error(f"Email send failed: {e}")
+        log.error(f"Email error: {e}")
 
 
-def main():
-    logger.info("=== Alamo Austin New Movie Check ===")
-    current_titles = fetch_movie_titles()
-    previous_titles = load_cache()
+# ---------- MAIN ----------
+def main() -> None:
+    log.info("=== Alamo New-Movie Check ===")
+    current = fetch_movie_titles()
+    previous = load_cache()
 
-    new_movies = get_new_movies(previous_titles, current_titles)
-
-    if new_movies:
-        logger.info(f"{len(new_movies)} new movie(s) found!")
-        for m in new_movies:
-            logger.info(f"NEW: {m}")
-        send_email_alert(new_movies)
+    new = sorted(current - previous)
+    if new:
+        log.info(f"{len(new)} NEW MOVIE(S): {', '.join(new)}")
+        send_email(new)
     else:
-        logger.info("No new movies found.")
+        log.info("No new movies")
 
-    save_cache(current_titles)
-    logger.info("Check complete.\n")
+    save_cache(current)
+    log.info("Run finished\n")
 
 
 if __name__ == "__main__":
