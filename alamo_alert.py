@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Working - No Profile)
+# alamo_alert.py - Alamo Austin New Movies (Auto ChromeDriver)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -7,10 +7,10 @@ import os
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 
 # === CONFIG ===
@@ -32,10 +32,12 @@ def get_driver():
     options.add_argument("--disable-images")
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    options.binary_location = "/usr/bin/google-chrome"
-
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=options)
+    
+    # Auto-install matching ChromeDriver
+    driver = webdriver.Chrome(
+        service=webdriver.chrome.service.Service(ChromeDriverManager().install()),
+        options=options
+    )
     return driver
 
 def fetch_movies():
