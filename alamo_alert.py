@@ -16,12 +16,12 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 
 # ============================= CONFIG =============================
 THEATER_URL = "https://drafthouse.com/austin/showtimes"
-CACHE>File = "alamo_cache.json"
+CACHE_FILE = "alamo_cache.json"        # ← FIXED: was CACHE>File
 LOG_FILE = "alamo_alert.log"
 
 # Email via GitHub Secrets
@@ -67,7 +67,7 @@ def get_driver():
 
     try:
         driver = webdriver.Chrome(options=options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver',', {get: () => false});")
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => false});")
         driver.set_page_load_timeout(30)
         logger.info("WebDriver initialized with stealth.")
         return driver
