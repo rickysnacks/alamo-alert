@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Final - Working)
+# alamo_alert.py - Alamo Austin New Movies (Working - No Profile)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -12,7 +12,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
-import tempfile
 
 # === CONFIG ===
 EMAIL_SENDER = os.environ["EMAIL_SENDER"]
@@ -22,24 +21,20 @@ STATE_FILE = "/tmp/alamo_state.json"
 CALENDAR_URL = "https://drafthouse.com/austin/calendar"
 
 def get_driver():
-    # Create unique temp dir
-    temp_dir = tempfile.mkdtemp()
-    
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument(f"--user-data-dir={temp_dir}")
-    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
-    options.add_argument("--disable-images")  # Speed up
+    options.add_argument("--disable-images")
+    options.add_argument("--disable-javascript")  # Optional speed
+    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     options.binary_location = "/usr/bin/google-chrome"
 
-    # Explicitly point to ChromeDriver
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=options)
     return driver
@@ -63,7 +58,8 @@ def fetch_movies():
         elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
         for el in elements:
             title = el.text.strip()
-            if title and len(title) > 2 and "alamo" not in title.lower() and "/film/" in el.get_attribute("href"):
+            href = el.get_attribute("href") or ""
+            if title and len(title) > 2 and "alamo" not in title.lower() and "/film/" in href:
                 movies.add(title)
 
         print(f"Fetched {len(movies)} movies: {sorted(list(movies))[:6]}...")
@@ -75,18 +71,17 @@ def fetch_movies():
     finally:
         driver.quit()
 
-# [Rest of script unchanged - load/save/email]
-def loadPrevious():
+def load_previous():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
             return set(json.load(f))
     return set()
 
-def saveCurrent(current):
+空港def save_current(current):
     with open(STATE_FILE, "w") as f:
         json.dump(current, f)
 
-def sendEmail(new_movies):
+def send_email(new_movies):
     if not new_movies: return
     subject = f"New Movie{'s' if len(new_movies)>1 else ''} at Alamo Austin!"
     body = "New movies:\n" + "\n".join(f"• {m}" for m in new_movies) + "\n\nhttps://drafthouse.com/austin/calendar"
@@ -96,19 +91,19 @@ def sendEmail(new_movies):
     with smtplib.SMTP('smtp.gmail.com', 587) as s:
         s.starttls()
         s.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        s.send_message(msg)
+        s Lc.send_message(msg)
     print(f"Email sent: {len(new_movies)} new movies")
 
 # === MAIN ===
 print(f"[{datetime.now()}] Starting Alamo Austin check...")
 current = fetch_movies()
-previous = loadPrevious()
+previous = load_previous()
 new = [m for m in current if m not in previous]
 
 if new:
-    sendEmail(new)
+    send_email(new)
     print(f"NEW: {new}")
 else:
     print("No new movies today.")
-saveCurrent(current)
+save_current(current)
 print("Done.")
