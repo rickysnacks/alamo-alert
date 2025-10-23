@@ -1,7 +1,7 @@
 name: Alamo Alert
 on:
   schedule:
-    - cron: '0 14 * * *'
+    - cron: '0 14 * * *'  # 9 AM Austin
   workflow_dispatch:
 
 jobs:
@@ -9,15 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install Chrome + ChromeDriver + Selenium
+
+      - name: Install Chrome 140 + ChromeDriver 140
         run: |
-          sudo apt-get update
-          sudo apt-get install -y chromium-browser chromium-chromedriver
-          pip install selenium
-      - run: python alamo_alert.py
+          # Download Chrome 140 for Linux
+          wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chrome-linux64.zip
+          unzip -q chrome-linux64.zip
+          sudo mv chrome-linux64/chrome /usr/bin/google-chrome
+          sudo chmod +x /usr/bin/google-chrome
+
+          # Download ChromeDriver 140
+          wget -q https://storage.googleapis.com/chrome-for-testing-public/140.0.7339.207/linux64/chromedriver-linux64.zip
+          unzip -q chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/bin/chromedriver
+          sudo chmod +x /usr/bin/chromedriver
+
+          # Verify versions
+          google-chrome --version
+          chromedriver --version
+
+      - name: Install Selenium
+        run: pip install selenium
+
+      - name: Run Alamo Alert
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        run: python alamo_alert.py
