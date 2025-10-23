@@ -1,4 +1,4 @@
-# alamo_alert.py - Alamo Austin New Movies (Final - Lazy Load + Scroll)
+# alamo_alert.py - Alamo Austin New Movies (Final - Scroll Only)
 import json
 import smtplib
 from email.mime.text import MIMEText
@@ -8,8 +8,6 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 
@@ -44,16 +42,9 @@ def fetch_movies():
     try:
         print(f"[{datetime.now()}] Loading calendar...")
         driver.get(CALENDAR_URL)
+        time.sleep(5)  # Initial load
 
-        # Wait for calendar grid
-        wait = WebDriverWait(driver, 20)
-        try:
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".CalendarGrid")))
-            print("Calendar grid loaded!")
-        except:
-            print("Calendar grid not found")
-
-        # Scroll slowly to load all movies
+        # SCROLL TO LOAD ALL MOVIES
         print("Scrolling to load all movies...")
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
@@ -65,7 +56,7 @@ def fetch_movies():
             last_height = new_height
         print("Scroll complete.")
 
-        # Extract from a[href*='/film/']
+        # EXTRACT FROM a[href*='/film/']
         movies = set()
         elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/film/']")
         for el in elements:
