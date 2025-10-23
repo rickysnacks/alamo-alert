@@ -1,12 +1,12 @@
-name: Alamo Austin Alert
+name: Alamo Austin New Movie Alert
 
 on:
   schedule:
     - cron: '*/30 * * * *'  # Every 30 minutes
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger
 
 jobs:
-  check-showtimes:
+  check-new-movies:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -30,10 +30,6 @@ jobs:
         with:
           chrome-version: stable
 
-      - name: Verify Chrome
-        run: |
-          google-chrome --version || true
-
       - name: Run Alamo Alert Script
         env:
           EMAIL_ENABLED: ${{ secrets.EMAIL_ENABLED }}
@@ -49,6 +45,6 @@ jobs:
         with:
           name: alamo-debug-${{ github.run_id }}
           path: |
-            debug_screenshot_*.png
+            debug_screenshot.png
             alamo_alert.log
-            alamo_cache.json
+            alamo_movie_cache.json
