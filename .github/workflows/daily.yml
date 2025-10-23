@@ -1,17 +1,17 @@
-name: Alamo Austin New Movie Alert
+name: Alamo Austin – New Movie Alert
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 minutes
-  workflow_dispatch:  # Manual trigger
+    - cron: '*/30 * * * *'   # every 30 min
+  workflow_dispatch:        # manual run
 
 jobs:
-  check-new-movies:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -20,31 +20,31 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install selenium beautifulsoup4
 
-      - name: Install Google Chrome
+      - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
 
-      - name: Run Alamo Alert Script
+      - name: Run script
         env:
           EMAIL_ENABLED: ${{ secrets.EMAIL_ENABLED }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO:      ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM:    ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASS:    ${{ secrets.EMAIL_PASS }}
         run: |
           python alamo_alert.py
 
-      - name: Upload debug artifacts
+      - name: Upload debug artefacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: alamo-debug-${{ github.run_id }}
           path: |
-            debug_screenshot.png
+            debug_calendar.png
             alamo_alert.log
             alamo_movie_cache.json
